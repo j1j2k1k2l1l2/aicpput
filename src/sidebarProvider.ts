@@ -1,0 +1,197 @@
+import * as vscode from 'vscode';
+import { CppParserModule } from './modules/cppParser';
+import { CoverageRunnerModule } from './modules/coverageRunner';
+import { KnowledgeGraphModule } from './modules/knowledgeGraph';
+import { MemoryStore } from './modules/memory';
+import { ModelClientModule } from './modules/modelClient';
+import { TestGeneratorModule } from './modules/testGenerator';
+import { GenerationRequest, MethodInfo } from './types';
+
+export class SidebarProvider implements vscode.WebviewViewProvider {
+  public static readonly viewType = 'cpput.sidebar';
+
+  private _view?: vscode.WebviewView;
+  private fileMethodMap = new Map<string, MethodInfo[]>();
+  private generatedContent = '';
+
+  constructor(
+    private readonly context: vscode.ExtensionContext,
+    private readonly parser: CppParserModule,
+    private readonly modelClient: ModelClientModule,
+    private readonly generator: TestGeneratorModule,
+    private readonly kg: KnowledgeGraphModule,
+    private readonly memory: MemoryStore,
+    private readonly coverage: CoverageRunnerModule,
+  ) {}
+
+  public resolveWebviewView(view: vscode.WebviewView): void {
+    this._view = view;
+    view.webview.options = { enableScripts: true };
+    view.webview.html = this.getHtml();
+
+    view.webview.onDidReceiveMessage(async (msg) => {
+      switch (msg.type) {
+        case 'requestMethods':
+          await this.refreshMethodIndex();
+          break;
+        case 'generate':
+          await this.handleGenerate(msg.filePath as string, msg.methodNames as string[]);
+          break;
+        case 'save':
+          await this.handleSave();
+          break;
+        case 'runCoverage':
+          await this.coverage.runCoverage();
+          break;
+      }
+    });
+
+    void this.refreshMethodIndex();
+  }
+
+  public async refreshMethodIndex(): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders;
+    if (!folders || folders.length === 0) {
+      return;
+    }
+
+    const index = await this.parser.indexWorkspace(folders[0].uri.fsPath);
+    this.fileMethodMap = new Map(index.map((entry) => [entry.filePath, entry.methods]));
+
+    this._view?.webview.postMessage({
+      type: 'methodsUpdated',
+      data: index,
+    });
+  }
+
+  private async handleGenerate(filePath: string, methodNames: string[]): Promise<void> {
+    const methods = (this.fileMethodMap.get(filePath) ?? []).filter((m) => methodNames.includes(m.name));
+
+    if (methods.length === 0) {
+      vscode.window.showWarningMessage('请先勾选至少一个方法。');
+      return;
+    }
+
+    const req: GenerationRequest = { filePath, methods, language: 'zh-CN' };
+    const prompt = this.generator.buildPrompt(req, this.kg.enrichPromptContext(methods));
+    const session = `${Date.now()}`;
+    this.memory.clear(session);
+    this.generatedContent = '';
+
+    await this.modelClient.streamGenerate(req, prompt, (chunk) => {
+      this.generatedContent += chunk;
+      this.memory.append(session, chunk);
+      this._view?.webview.postMessage({ type: 'stream', chunk });
+    });
+
+    this.generatedContent = this.memory.read(session);
+    this._view?.webview.postMessage({ type: 'done' });
+  }
+
+  private async handleSave(): Promise<void> {
+    if (!this.generatedContent.trim()) {
+      vscode.window.showWarningMessage('当前没有可保存的测试内容。');
+      return;
+    }
+
+    const uri = await vscode.window.showSaveDialog({
+      saveLabel: '保存测试文件',
+      filters: { 'C++ Test': ['cpp'] },
+      defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri.with({ path: `${vscode.workspace.workspaceFolders[0].uri.path}/generated_test.cpp` }),
+    });
+
+    if (!uri) {
+      return;
+    }
+
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(this.generatedContent, 'utf-8'));
+    vscode.window.showInformationMessage(`测试文件已保存: ${uri.fsPath}`);
+  }
+
+  private getHtml(): string {
+    const nonce = `${Date.now()}`;
+    return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: var(--vscode-font-family); padding: 8px; }
+    select, button { width: 100%; margin-top: 8px; }
+    #methods { border: 1px solid var(--vscode-editorWidget-border); margin-top: 8px; padding: 6px; max-height: 180px; overflow: auto; }
+    #output { margin-top: 8px; width: 100%; height: 220px; white-space: pre-wrap; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); }
+    .row { display: flex; gap: 6px; }
+    .row button { flex: 1; }
+  </style>
+</head>
+<body>
+  <h3>CppUT Assistant</h3>
+  <button id="refresh">刷新工程方法索引</button>
+  <select id="fileSelect"></select>
+  <div id="methods"></div>
+  <div class="row">
+    <button id="generate">流式生成测试</button>
+    <button id="save">保存测试文件</button>
+  </div>
+  <button id="coverage">运行覆盖率流程</button>
+  <textarea id="output" placeholder="模型输出将显示在这里"></textarea>
+
+  <script nonce="${nonce}">
+    const vscode = acquireVsCodeApi();
+    const fileSelect = document.getElementById('fileSelect');
+    const methodsDiv = document.getElementById('methods');
+    const output = document.getElementById('output');
+    let cache = [];
+
+    function renderFiles() {
+      fileSelect.innerHTML = '';
+      cache.forEach((entry) => {
+        const opt = document.createElement('option');
+        opt.value = entry.filePath;
+        opt.textContent = entry.filePath;
+        fileSelect.appendChild(opt);
+      });
+      renderMethods();
+    }
+
+    function renderMethods() {
+      const current = cache.find((e) => e.filePath === fileSelect.value) || cache[0];
+      methodsDiv.innerHTML = '';
+      if (!current) return;
+      current.methods.forEach((method) => {
+        const label = document.createElement('label');
+        label.style.display = 'block';
+        label.innerHTML = '<input type="checkbox" value="' + method.name + '" /> ' + method.name + ' — ' + method.signature;
+        methodsDiv.appendChild(label);
+      });
+      fileSelect.value = current.filePath;
+    }
+
+    document.getElementById('refresh').onclick = () => vscode.postMessage({ type: 'requestMethods' });
+    fileSelect.onchange = () => renderMethods();
+    document.getElementById('generate').onclick = () => {
+      const names = [...methodsDiv.querySelectorAll('input:checked')].map((el) => el.value);
+      output.value = '';
+      vscode.postMessage({ type: 'generate', filePath: fileSelect.value, methodNames: names });
+    };
+    document.getElementById('save').onclick = () => vscode.postMessage({ type: 'save' });
+    document.getElementById('coverage').onclick = () => vscode.postMessage({ type: 'runCoverage' });
+
+    window.addEventListener('message', (event) => {
+      const msg = event.data;
+      if (msg.type === 'methodsUpdated') {
+        cache = msg.data;
+        renderFiles();
+      }
+      if (msg.type === 'stream') {
+        output.value += msg.chunk;
+      }
+    });
+
+    vscode.postMessage({ type: 'requestMethods' });
+  </script>
+</body>
+</html>`;
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "name": "cpput-assistant",
+  "displayName": "CppUT Assistant",
+  "description": "为 C++ 工程方法生成 GoogleTest 单元测试并尝试运行覆盖率报告。",
+  "version": "0.0.1",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:cpput.sidebar",
+    "onCommand:cpput.refreshMethods",
+    "onCommand:cpput.runCoverage"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cpput",
+          "title": "CppUT",
+          "icon": "media/beaker.svg"
+        }
+      ]
+    },
+    "views": {
+      "cpput": [
+        {
+          "id": "cpput.sidebar",
+          "name": "CppUT Assistant"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "cpput.refreshMethods",
+        "title": "CppUT: 刷新方法列表"
+      },
+      {
+        "command": "cpput.runCoverage",
+        "title": "CppUT: 运行覆盖率"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "pretest": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.3",
+    "eslint": "^8.56.0",
+    "@typescript-eslint/parser": "^6.20.0",
+    "@typescript-eslint/eslint-plugin": "^6.20.0"
+  }
+}
