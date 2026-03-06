@@ -1,10 +1,7 @@
 import * as vscode from 'vscode';
 import { CppParserModule } from './modules/cppParser';
 import { CoverageRunnerModule } from './modules/coverageRunner';
-import { KnowledgeGraphModule } from './modules/knowledgeGraph';
-import { MemoryStore } from './modules/memory';
 import { ModelClientModule } from './modules/modelClient';
-import { TestGeneratorModule } from './modules/testGenerator';
 import { GenerationRequest, MethodInfo } from './types';
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
@@ -18,9 +15,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private readonly context: vscode.ExtensionContext,
     private readonly parser: CppParserModule,
     private readonly modelClient: ModelClientModule,
-    private readonly generator: TestGeneratorModule,
-    private readonly kg: KnowledgeGraphModule,
-    private readonly memory: MemoryStore,
     private readonly coverage: CoverageRunnerModule,
   ) {}
 
@@ -73,18 +67,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     const req: GenerationRequest = { filePath, methods, language: 'zh-CN' };
-    const prompt = this.generator.buildPrompt(req, this.kg.enrichPromptContext(methods));
-    const session = `${Date.now()}`;
-    this.memory.clear(session);
     this.generatedContent = '';
 
-    await this.modelClient.streamGenerate(req, prompt, (chunk) => {
+    await this.modelClient.streamGenerate(req, '', (chunk) => {
       this.generatedContent += chunk;
-      this.memory.append(session, chunk);
       this._view?.webview.postMessage({ type: 'stream', chunk });
     });
-
-    this.generatedContent = this.memory.read(session);
     this._view?.webview.postMessage({ type: 'done' });
   }
 
