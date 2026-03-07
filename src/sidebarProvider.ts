@@ -59,6 +59,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleGenerate(filePath: string, methodNames: string[]): Promise<void> {
+    if (!filePath) {
+      vscode.window.showWarningMessage('请先选择一个源文件。');
+      return;
+    }
+
     const methods = (this.fileMethodMap.get(filePath) ?? []).filter((m) => methodNames.includes(m.name));
 
     if (methods.length === 0) {
@@ -69,11 +74,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const req: GenerationRequest = { filePath, methods, language: 'zh-CN' };
     this.generatedContent = '';
 
-    await this.modelClient.streamGenerate(req, '', (chunk) => {
-      this.generatedContent += chunk;
-      this._view?.webview.postMessage({ type: 'stream', chunk });
-    });
-    this._view?.webview.postMessage({ type: 'done' });
+    try {
+      await this.modelClient.streamGenerate(req, '', (chunk) => {
+        this.generatedContent += chunk;
+        this._view?.webview.postMessage({ type: 'stream', chunk });
+      });
+      this._view?.webview.postMessage({ type: 'done' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this._view?.webview.postMessage({ type: 'stream', chunk: `\n[生成失败] ${message}\n` });
+      vscode.window.showErrorMessage(`流式生成失败：${message}`);
+    }
   }
 
   private async handleSave(): Promise<void> {
