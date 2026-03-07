@@ -5,14 +5,26 @@ export class CoverageRunnerModule {
     const terminal = vscode.window.createTerminal('CppUT Coverage');
     terminal.show(true);
 
-    const commands = [
+    if (process.platform === 'win32') {
+      const command = [
+        'if (Test-Path CMakeLists.txt) { cmake -S . -B build; if ($LASTEXITCODE -eq 0) { cmake --build build } }',
+        'if (Test-Path build) { Set-Location build }',
+        'ctest --output-on-failure',
+        'if (Get-Command gcovr -ErrorAction SilentlyContinue) { gcovr -r .. --html --html-details -o coverage.html }',
+        'Write-Host "Coverage workflow finished. Check build/coverage.html if generated."',
+      ].join('; ');
+      terminal.sendText(command);
+      return;
+    }
+
+    const command = [
       'if [ -f CMakeLists.txt ]; then cmake -S . -B build && cmake --build build; fi',
       'if [ -d build ]; then cd build; fi',
       'ctest --output-on-failure || true',
       'if command -v gcovr >/dev/null 2>&1; then gcovr -r .. --html --html-details -o coverage.html; fi',
       'echo "Coverage workflow finished. Check build/coverage.html if generated."',
-    ];
+    ].join(' && ');
 
-    terminal.sendText(commands.join(' && '));
+    terminal.sendText(command);
   }
 }

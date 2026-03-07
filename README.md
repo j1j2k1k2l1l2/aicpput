@@ -106,12 +106,37 @@ pip install gcovr
 
 不设置时会使用 mock 输出；设置后可调用真实模型。
 
+### 4.4.1 当前代码里“读取环境变量”的具体位置
+
+- Python 后端读取模型配置的代码在：`python_backend/model_client.py` 的 `ModelClientModule.stream_generate` 方法。
+- 该方法通过 `os.getenv("CPPUT_API_ENDPOINT")` 与 `os.getenv("CPPUT_API_KEY")` 决定是走真实模型还是 mock 输出。
+
+### 4.4.2 临时设置（仅当前 PowerShell 会话生效）
+
 ```powershell
 $env:CPPUT_API_ENDPOINT="https://your-llm-endpoint/v1/chat/completions"
 $env:CPPUT_API_KEY="your_api_key"
 ```
 
-如果 Python 可执行文件名不是 `python`，可指定：
+验证是否设置成功：
+
+```powershell
+echo $env:CPPUT_API_ENDPOINT
+echo $env:CPPUT_API_KEY
+```
+
+### 4.4.3 永久设置（用户级环境变量）
+
+```powershell
+[System.Environment]::SetEnvironmentVariable("CPPUT_API_ENDPOINT","https://your-llm-endpoint/v1/chat/completions","User")
+[System.Environment]::SetEnvironmentVariable("CPPUT_API_KEY","your_api_key","User")
+```
+
+设置后请**关闭并重新打开 VSCode**，让扩展宿主进程读取到新变量。
+
+### 4.4.4 Python 可执行文件名不是 `python` 时
+
+在 `src/modules/pythonBackendClient.ts` 的 `PythonBackendClient` 中，会优先读取 `CPPUT_PYTHON_BIN`（默认值为 `python`）。你可以这样设置：
 
 ```powershell
 $env:CPPUT_PYTHON_BIN="py"
@@ -180,11 +205,17 @@ python -m python_backend.service generate --file "你的cpp文件路径" --metho
 
 ## 8. 覆盖率说明
 
-插件中“运行覆盖率流程”当前执行通用命令链：
+插件中“运行覆盖率流程”已按终端平台区分命令：
 
-- 若有 `CMakeLists.txt`：尝试 `cmake -S . -B build && cmake --build build`
-- 进入 `build` 后尝试 `ctest --output-on-failure`
-- 若检测到 `gcovr`：生成 `coverage.html`
+- **Windows PowerShell**（`src/modules/coverageRunner.ts`）：
+  - `if (Test-Path CMakeLists.txt) { cmake -S . -B build; ... }`
+  - `if (Test-Path build) { Set-Location build }`
+  - `ctest --output-on-failure`
+  - 若存在 `gcovr` 则生成 `coverage.html`
+- **Linux/macOS shell**：
+  - 保持原有 bash 风格命令链（`if [ -f ... ]` / `&&` / `|| true`）。
+
+这样可以避免 PowerShell 下把 bash 语法解析成 `if` / `&&` / `||` 语法错误。
 
 > 不同项目构建参数差异很大，实际项目中建议按工程情况调整。
 
