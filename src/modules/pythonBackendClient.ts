@@ -6,6 +6,14 @@ import { FileMethodIndex } from '../types';
 export class PythonBackendClient {
   private readonly rootDir = path.resolve(__dirname, '../../');
 
+  private getPythonEnv(): NodeJS.ProcessEnv {
+    return {
+      ...process.env,
+      PYTHONUTF8: '1',
+      PYTHONIOENCODING: 'utf-8',
+    };
+  }
+
   public async indexWorkspace(rootPath: string): Promise<FileMethodIndex[]> {
     const output = await this.runJsonCommand(['index', '--root', rootPath]);
     return output as FileMethodIndex[];
@@ -20,7 +28,7 @@ export class PythonBackendClient {
     const args = ['-m', 'python_backend.service', 'generate', '--file', filePath, '--methods', JSON.stringify(methodNames)];
 
     return await new Promise<string>((resolve, reject) => {
-      const child = spawn(python, args, { cwd: this.rootDir, env: process.env });
+      const child = spawn(python, args, { cwd: this.rootDir, env: this.getPythonEnv() });
       const rl = readline.createInterface({ input: child.stdout });
       let fullText = '';
       let stderr = '';
@@ -66,7 +74,7 @@ export class PythonBackendClient {
     const cmdArgs = ['-m', 'python_backend.service', ...args];
 
     return await new Promise<unknown>((resolve, reject) => {
-      const child = spawn(python, cmdArgs, { cwd: this.rootDir, env: process.env });
+      const child = spawn(python, cmdArgs, { cwd: this.rootDir, env: this.getPythonEnv() });
       let stdout = '';
       let stderr = '';
 
