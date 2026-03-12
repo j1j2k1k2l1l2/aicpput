@@ -229,6 +229,44 @@ python -m python_backend.service generate --file "你的cpp文件路径" --metho
 
 ---
 
+## 11. 问题修复记录：方法列表可检索，但生成仅出现 mock 提示
+
+### 11.1 现象
+
+- 在宿主插件中点击“刷新工程方法索引”可以正常返回方法列表。
+- 点击“流式生成测试”后，仅返回 `// Mock Stream Output` 等 mock 文本。
+- 用户误以为后端未进入 `service.py::cmd_generate` / `model_client.py::stream_generate`。
+
+### 11.2 实际原因
+
+根因并不是“生成命令完全未触发”，而是**模型配置没有被稳定传递到 Python 子进程**，导致 Python 后端判定 `CPPUT_API_ENDPOINT` / `CPPUT_API_KEY` 缺失，自动回退到 mock 输出。
+
+常见触发场景：
+
+1. 在 VSCode `settings.json` 中填写了 API 配置，但没有设置为系统环境变量；旧实现只读取 `process.env`，不会主动读取插件设置并转发给 Python。
+2. 只设置了 Key 或只设置了 Endpoint，旧实现会静默走 mock，外观上像“调用了生成但没走真实模型”。
+
+### 11.3 修复方案（已落地）
+
+1. **TS 侧新增配置透传**
+   - 新增插件设置项：
+     - `cpput.apiEndpoint`
+     - `cpput.apiKey`
+   - 在 `PythonBackendClient.getPythonEnv()` 中，优先用环境变量，其次读取 VSCode 配置，并统一注入 `CPPUT_API_ENDPOINT` / `CPPUT_API_KEY` 给 Python 子进程。
+
+2. **Python 侧增强配置读取与错误提示**
+   - `model_client.py` 支持多组环境变量别名（`CPPUT_*`、`OPENAI_*`、`API_*`）。
+   - 当 Key 与 Endpoint 都缺失时仍允许 mock（离线联调）。
+   - 当只缺其中一个时不再静默 mock，而是抛出明确错误，便于快速定位配置问题。
+
+### 11.4 使用建议
+
+- 推荐优先在 VSCode 设置中配置：`cpput.apiEndpoint` 与 `cpput.apiKey`。
+- 若使用环境变量，请确保 Extension Host 进程可见（修改后重启 VSCode）。
+- 调试时若看到“模型配置不完整”报错，先检查 Key 与 Endpoint 是否成对出现。
+
+---
+
 ## 10. 二次开发建议
 
 - 用 clangd/libclang 替换正则解析，提高方法识别准确率。

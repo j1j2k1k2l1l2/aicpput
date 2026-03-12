@@ -1,16 +1,23 @@
 import * as path from 'path';
 import * as readline from 'readline';
 import { spawn } from 'child_process';
+import * as vscode from 'vscode';
 import { FileMethodIndex } from '../types';
 
 export class PythonBackendClient {
   private readonly rootDir = path.resolve(__dirname, '../../');
 
   private getPythonEnv(): NodeJS.ProcessEnv {
+    const config = vscode.workspace.getConfiguration('cpput');
+    const endpoint = config.get<string>('apiEndpoint')?.trim();
+    const apiKey = config.get<string>('apiKey')?.trim();
+
     return {
       ...process.env,
       PYTHONUTF8: '1',
       PYTHONIOENCODING: 'utf-8',
+      CPPUT_API_ENDPOINT: process.env.CPPUT_API_ENDPOINT || endpoint,
+      CPPUT_API_KEY: process.env.CPPUT_API_KEY || apiKey,
     };
   }
 

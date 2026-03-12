@@ -11,12 +11,14 @@ from .types import GenerationRequest
 
 class ModelClientModule:
     def stream_generate(self, req: GenerationRequest, prompt: str, on_chunk: Callable[[str], None]) -> None:
-        api_key = os.getenv("CPPUT_API_KEY")
-        endpoint = os.getenv("CPPUT_API_ENDPOINT")
+        api_key = self._first_env("CPPUT_API_KEY", "OPENAI_API_KEY", "API_KEY")
+        endpoint = self._first_env("CPPUT_API_ENDPOINT", "OPENAI_BASE_URL", "API_ENDPOINT")
 
-        if not api_key or not endpoint:
+        if not api_key and not endpoint:
             self._stream_mock(req, prompt, on_chunk)
             return
+        if not api_key or not endpoint:
+            raise RuntimeError("模型配置不完整：请同时设置 API Key 与 Endpoint，或都不设置以使用 mock 模式")
 
         payload = json.dumps(
             {
@@ -75,3 +77,10 @@ class ModelClientModule:
     def _split_chunks(self, text: str, size: int):
         for i in range(0, len(text), size):
             yield text[i : i + size]
+
+    def _first_env(self, *names: str) -> str | None:
+        for name in names:
+            value = os.getenv(name)
+            if value and value.strip():
+                return value.strip()
+        return None
