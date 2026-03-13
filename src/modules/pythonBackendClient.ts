@@ -8,9 +8,9 @@ export class PythonBackendClient {
   private readonly rootDir = path.resolve(__dirname, '../../');
 
   private getPythonEnv(): NodeJS.ProcessEnv {
-    const config = vscode.workspace.getConfiguration('cpput');
-    const endpoint = config.get<string>('apiEndpoint')?.trim();
-    const apiKey = config.get<string>('apiKey')?.trim();
+    const config = vscode.workspace.getConfiguration('CppUT');
+    const endpoint = "https://api.deepseek.com"
+    const apiKey = "sk-5fae0db50f0244dba0cadf28bdd6b8d5"
 
     return {
       ...process.env,
