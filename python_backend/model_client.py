@@ -5,39 +5,37 @@ import os
 import time
 from typing import Callable
 from urllib import error, request
-
+import logging
 from .types import GenerationRequest
 
 
 class ModelClientModule:
     def stream_generate(self, req: GenerationRequest, prompt: str, on_chunk: Callable[[str], None]) -> None:
-        api_key = self._first_env("CPPUT_API_KEY", "OPENAI_API_KEY", "API_KEY")
-        endpoint = self._first_env("CPPUT_API_ENDPOINT", "OPENAI_BASE_URL", "API_ENDPOINT")
-        model = self._first_env("CPPUT_MODEL", "OPENAI_MODEL") or "deepseek-chat"
-
+        api_key = "暂不填写"
+        endpoint = "https://api.deepseek.com/v1/chat/completions"
+        logging.info("进入配置部分")
         if not api_key and not endpoint:
             self._stream_mock(req, prompt, on_chunk)
             return
         if not api_key or not endpoint:
             raise RuntimeError("模型配置不完整：请同时设置 API Key 与 Endpoint，或都不设置以使用 mock 模式")
-
+        
         payload = json.dumps(
             {
+                "model": "deepseek-chat",
                 "stream": False,
-                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode("utf-8")
 
-        request_url = self._normalize_endpoint(endpoint)
         req_obj = request.Request(
-            request_url,
-            data=payload,
+            endpoint,
             headers={
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
+                "Authorization": f"Bearer {api_key}"
             },
-            method="POST",
+            data=payload,
+            method='POST',
         )
 
         try:
@@ -58,22 +56,9 @@ class ModelClientModule:
                 content = msg.get("content")
                 if isinstance(content, str):
                     return content
-                if isinstance(content, list):
-                    text_parts = []
-                    for item in content:
-                        if isinstance(item, dict) and isinstance(item.get("text"), str):
-                            text_parts.append(item["text"])
-                    if text_parts:
-                        return "".join(text_parts)
         except json.JSONDecodeError:
             pass
         return body
-
-    def _normalize_endpoint(self, endpoint: str) -> str:
-        normalized = endpoint.strip().rstrip("/")
-        if normalized.endswith("/chat/completions"):
-            return normalized
-        return f"{normalized}/chat/completions"
 
     def _stream_mock(self, req: GenerationRequest, prompt: str, on_chunk: Callable[[str], None]) -> None:
         names = ", ".join(m.name for m in req.methods)
@@ -93,6 +78,7 @@ class ModelClientModule:
     def _split_chunks(self, text: str, size: int):
         for i in range(0, len(text), size):
             yield text[i : i + size]
+
 
     def _first_env(self, *names: str) -> str | None:
         for name in names:
