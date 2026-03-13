@@ -13,6 +13,7 @@ class ModelClientModule:
     def stream_generate(self, req: GenerationRequest, prompt: str, on_chunk: Callable[[str], None]) -> None:
         api_key = self._first_env("CPPUT_API_KEY", "OPENAI_API_KEY", "API_KEY")
         endpoint = self._first_env("CPPUT_API_ENDPOINT", "OPENAI_BASE_URL", "API_ENDPOINT")
+        model = self._first_env("CPPUT_MODEL", "OPENAI_MODEL") or "deepseek-chat"
 
         if not api_key and not endpoint:
             self._stream_mock(req, prompt, on_chunk)
@@ -23,12 +24,14 @@ class ModelClientModule:
         payload = json.dumps(
             {
                 "stream": False,
+                "model": model,
                 "messages": [{"role": "user", "content": prompt}],
             }
         ).encode("utf-8")
 
+        request_url = self._normalize_endpoint(endpoint)
         req_obj = request.Request(
-            endpoint,
+            request_url,
             data=payload,
             headers={
                 "Content-Type": "application/json",
@@ -55,9 +58,22 @@ class ModelClientModule:
                 content = msg.get("content")
                 if isinstance(content, str):
                     return content
+                if isinstance(content, list):
+                    text_parts = []
+                    for item in content:
+                        if isinstance(item, dict) and isinstance(item.get("text"), str):
+                            text_parts.append(item["text"])
+                    if text_parts:
+                        return "".join(text_parts)
         except json.JSONDecodeError:
             pass
         return body
+
+    def _normalize_endpoint(self, endpoint: str) -> str:
+        normalized = endpoint.strip().rstrip("/")
+        if normalized.endswith("/chat/completions"):
+            return normalized
+        return f"{normalized}/chat/completions"
 
     def _stream_mock(self, req: GenerationRequest, prompt: str, on_chunk: Callable[[str], None]) -> None:
         names = ", ".join(m.name for m in req.methods)
