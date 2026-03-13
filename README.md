@@ -273,3 +273,34 @@ python -m python_backend.service generate --file "你的cpp文件路径" --metho
 - 在 UI 中增加“按类/命名空间”过滤。
 - 增加覆盖率结果可视化（树形+高亮）。
 - 将 Memory 与 KG 接入向量数据库实现检索增强。
+
+
+## 12. 问题修复记录：点击“流式生成测试”无响应
+
+### 12.1 现象
+
+- 在宿主插件里可正常点击按钮，但输出框无流式内容。
+- 已在 VSCode 设置中配置 `cpput.apiEndpoint=https://api.deepseek.com` 与 `cpput.apiKey`，仍看起来“没有触发生成”。
+
+### 12.2 根因
+
+`python_backend/model_client.py` 旧实现会把 `cpput.apiEndpoint` 直接当成完整请求地址。
+当你填的是基础地址（如 `https://api.deepseek.com`）时，后端实际请求 URL 缺少 `/chat/completions`，导致模型调用失败，前端看起来像“点击无反应”。
+
+### 12.3 代码修复
+
+已在 Python 模型客户端落地以下修复：
+
+1. 自动规范化 endpoint：
+   - 若配置为基础地址，自动补全为 `${endpoint}/chat/completions`。
+   - 若已是完整地址（以 `/chat/completions` 结尾）则保持不变。
+2. 请求体增加 `model` 字段：
+   - 支持读取 `CPPUT_MODEL` / `OPENAI_MODEL`，默认 `deepseek-chat`。
+3. 兼容更多响应内容格式：
+   - 除了字符串 `message.content`，也支持数组结构中的 `text` 片段拼接。
+
+### 12.4 建议配置
+
+- 推荐把 `cpput.apiEndpoint` 直接设为 `https://api.deepseek.com`（现在会自动补全路径）。
+- 或显式设为 `https://api.deepseek.com/chat/completions`。
+- 修改配置后请重启 Extension Host（F5 调试场景建议重启整个调试会话）。
