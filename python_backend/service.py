@@ -31,7 +31,8 @@ def cmd_generate(file_path: str, method_names: List[str]) -> int:
     memory = MemoryStore()
     logging.info("后端启动成功")
     all_methods = parser.extract_methods_from_file(Path(file_path))
-    selected = [m for m in all_methods if m.name in set(method_names)]
+    target_name = method_names[0] if method_names else ""
+    selected = [m for m in all_methods if m.name == target_name]
     if not selected:
         print(json.dumps({"type": "error", "message": "未找到指定方法"}, ensure_ascii=False))
         return 1

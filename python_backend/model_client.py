@@ -41,12 +41,40 @@ class ModelClientModule:
         try:
             with request.urlopen(req_obj, timeout=120) as resp:
                 body = resp.read().decode("utf-8", errors="ignore")
-                text = self._extract_text(body)
+                text = self._sanitize_model_output(self._extract_text(body))
                 for chunk in self._split_chunks(text, 120):
                     on_chunk(chunk)
         except error.URLError as exc:
             raise RuntimeError(f"模型调用失败: {exc}") from exc
 
+
+    def _sanitize_model_output(self, text: str) -> str:
+        normalized = text.strip()
+        if not normalized:
+            return normalized
+
+        if "```" in normalized:
+            code_blocks = []
+            parts = normalized.split("```")
+            for i in range(1, len(parts), 2):
+                block = parts[i]
+                lines = block.splitlines()
+                if lines and lines[0].strip().lower() in {"cpp", "c++", "cc", "cxx"}:
+                    lines = lines[1:]
+                code = "\n".join(lines).strip()
+                if code:
+                    code_blocks.append(code)
+            if code_blocks:
+                normalized = "\n\n".join(code_blocks)
+
+        cpp_like = [
+            line for line in normalized.splitlines()
+            if line.strip()
+            and not line.strip().startswith("分析")
+            and not line.strip().startswith("说明")
+            and not line.strip().startswith("下面")
+        ]
+        return "\n".join(cpp_like).strip() + "\n"
     def _extract_text(self, body: str) -> str:
         try:
             data = json.loads(body)

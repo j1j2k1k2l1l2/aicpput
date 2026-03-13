@@ -9,7 +9,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
   private _view?: vscode.WebviewView;
   private fileMethodMap = new Map<string, MethodInfo[]>();
-  private generatedContent = '';
+  private generatedByMethod = new Map<string, string>();
+  private currentGeneratedMethod = '';
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -29,7 +30,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
           await this.refreshMethodIndex();
           break;
         case 'generate':
-          await this.handleGenerate(msg.filePath as string, msg.methodNames as string[]);
+          await this.handleGenerate(msg.filePath as string, msg.methodName as string);
           break;
         case 'save':
           await this.handleSave();
@@ -58,25 +59,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     });
   }
 
-  private async handleGenerate(filePath: string, methodNames: string[]): Promise<void> {
+  private async handleGenerate(filePath: string, methodName: string): Promise<void> {
     if (!filePath) {
       vscode.window.showWarningMessage('请先选择一个源文件。');
       return;
     }
 
-    const methods = (this.fileMethodMap.get(filePath) ?? []).filter((m) => methodNames.includes(m.name));
+    const method = (this.fileMethodMap.get(filePath) ?? []).find((m) => m.name === methodName);
 
-    if (methods.length === 0) {
-      vscode.window.showWarningMessage('请先勾选至少一个方法。');
+    if (!method) {
+      vscode.window.showWarningMessage('请先选择一个方法。');
       return;
     }
 
-    const req: GenerationRequest = { filePath, methods, language: 'zh-CN' };
-    this.generatedContent = '';
+    const req: GenerationRequest = { filePath, methods: [method], language: 'zh-CN' };
+    this.currentGeneratedMethod = method.name;
+    this.generatedByMethod.set(this.currentGeneratedMethod, '');
 
     try {
       await this.modelClient.streamGenerate(req, '', (chunk) => {
-        this.generatedContent += chunk;
+        const previous = this.generatedByMethod.get(this.currentGeneratedMethod) ?? '';
+        this.generatedByMethod.set(this.currentGeneratedMethod, previous + chunk);
         this._view?.webview.postMessage({ type: 'stream', chunk });
       });
       this._view?.webview.postMessage({ type: 'done' });
@@ -88,7 +91,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleSave(): Promise<void> {
-    if (!this.generatedContent.trim()) {
+    const methodContent = this.generatedByMethod.get(this.currentGeneratedMethod) ?? '';
+    if (!methodContent.trim()) {
       vscode.window.showWarningMessage('当前没有可保存的测试内容。');
       return;
     }
@@ -96,14 +100,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const uri = await vscode.window.showSaveDialog({
       saveLabel: '保存测试文件',
       filters: { 'C++ Test': ['cpp'] },
-      defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri.with({ path: `${vscode.workspace.workspaceFolders[0].uri.path}/generated_test.cpp` }),
+      defaultUri: vscode.workspace.workspaceFolders?.[0]?.uri.with({ path: `${vscode.workspace.workspaceFolders[0].uri.path}/generated_${this.currentGeneratedMethod}_test.cpp` }),
     });
 
     if (!uri) {
       return;
     }
 
-    await vscode.workspace.fs.writeFile(uri, Buffer.from(this.generatedContent, 'utf-8'));
+    await vscode.workspace.fs.writeFile(uri, Buffer.from(methodContent, 'utf-8'));
     vscode.window.showInformationMessage(`测试文件已保存: ${uri.fsPath}`);
   }
 
@@ -158,10 +162,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       const current = cache.find((e) => e.filePath === fileSelect.value) || cache[0];
       methodsDiv.innerHTML = '';
       if (!current) return;
-      current.methods.forEach((method) => {
+      current.methods.forEach((method, idx) => {
         const label = document.createElement('label');
         label.style.display = 'block';
-        label.innerHTML = '<input type="checkbox" value="' + method.name + '" /> ' + method.name + ' — ' + method.signature;
+        label.innerHTML = '<input type="radio" name="method" value="' + method.name + '" ' + (idx === 0 ? 'checked' : '') + ' /> ' + method.name + ' — ' + method.signature;
         methodsDiv.appendChild(label);
       });
       fileSelect.value = current.filePath;
@@ -170,9 +174,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     document.getElementById('refresh').onclick = () => vscode.postMessage({ type: 'requestMethods' });
     fileSelect.onchange = () => renderMethods();
     document.getElementById('generate').onclick = () => {
-      const names = [...methodsDiv.querySelectorAll('input:checked')].map((el) => el.value);
+      const selected = methodsDiv.querySelector('input[name="method"]:checked');
+      const methodName = selected ? selected.value : '';
       output.value = '';
-      vscode.postMessage({ type: 'generate', filePath: fileSelect.value, methodNames: names });
+      vscode.postMessage({ type: 'generate', filePath: fileSelect.value, methodName });
     };
     document.getElementById('save').onclick = () => vscode.postMessage({ type: 'save' });
     document.getElementById('coverage').onclick = () => vscode.postMessage({ type: 'runCoverage' });

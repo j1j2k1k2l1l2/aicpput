@@ -2,24 +2,26 @@ import { GenerationRequest } from '../types';
 
 export class TestGeneratorModule {
   public buildPrompt(request: GenerationRequest, additionalContext: string): string {
-    const methodText = request.methods
-      .map((m) => `目标测试源函数是 ${m.name} ，函数签名是 ${m.signature}`)
-      .join('\n');
+    const targetMethod = request.methods[0];
+    const anchor = targetMethod?.name ?? 'unknown';
+    const signature = targetMethod?.signature ?? 'unknown';
 
     return [
-      '你是c++测试专家，你的任务是根据提供的目标测试源函数信息，使用googletest作为基础测试框架编写测试用例。',
-      methodText,
+      '你是 C++ 单元测试专家，使用 GoogleTest 生成测试代码。',
+      `当前仅允许测试一个目标函数：${anchor}`,
+      `目标函数签名：${signature}`,
       '',
-      '编写单元测试用例使用如下格式：',
-      `以下是对源函数 ${request.methods[0]?.name ?? 'unknown'} ，cpput专家编写的开头，请在返回结果中保留这一部分：`,
+      '请严格遵循以下输出规则：',
+      '1) 只输出可直接保存的 C++ 测试代码，不要解释、不要分析、不要中文描述。',
+      '2) 不要使用 Markdown 代码块围栏（禁止 ```cpp / ```）。',
+      `3) 只允许围绕函数 ${anchor} 生成测试，不要包含其它函数的测试。`,
+      '4) 输出必须是一个完整可编译的 .cpp 测试文件（无需 main）。',
+      '5) 请覆盖主要分支与边界条件。',
+      '',
+      '测试文件开头必须保留：',
       '#include <gtest/gtest.h>\n// TODO: include target headers',
       '',
-      '根据上面的上下文信息，使用中文完成以下任务：',
-      '充分分析函数作用和分支内容信息（保证行覆盖率，分支覆盖率）',
-      '使用cpp专家编写的测试开头为目标方法编写测试用例，并且保证覆盖率',
-      '将所有测试用例写入一个完整的cpp文件中，并且编译通过',
-      '无需在测试文件中保留主函数',
-      '',
+      '仅返回 C++ 测试代码：',
       additionalContext,
     ].join('\n');
   }
