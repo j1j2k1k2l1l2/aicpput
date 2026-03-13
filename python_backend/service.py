@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import uuid
+import logging
 from pathlib import Path
 from typing import List
 
@@ -28,7 +29,7 @@ def cmd_generate(file_path: str, method_names: List[str]) -> int:
     generator = TestGeneratorModule()
     kg = KnowledgeGraphModule()
     memory = MemoryStore()
-
+    logging.info("后端启动成功")
     all_methods = parser.extract_methods_from_file(Path(file_path))
     selected = [m for m in all_methods if m.name in set(method_names)]
     if not selected:
@@ -46,6 +47,8 @@ def cmd_generate(file_path: str, method_names: List[str]) -> int:
         print(json.dumps({"type": "chunk", "data": chunk}, ensure_ascii=False), flush=True)
 
     model.stream_generate(req, prompt, on_chunk)
+    
+
     print(json.dumps({"type": "done", "data": memory.read(session)}, ensure_ascii=False), flush=True)
     return 0
 
