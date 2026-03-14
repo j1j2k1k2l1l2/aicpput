@@ -108,7 +108,59 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     await vscode.workspace.fs.writeFile(uri, Buffer.from(methodContent, 'utf-8'));
+    await this.tryRegisterCTest(uri);
     vscode.window.showInformationMessage(`测试文件已保存: ${uri.fsPath}`);
+  }
+
+  private async tryRegisterCTest(testFileUri: vscode.Uri): Promise<void> {
+    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!workspaceRoot) {
+      return;
+    }
+
+    const cmakeUri = vscode.Uri.joinPath(workspaceRoot, 'CMakeLists.txt');
+    try {
+      await vscode.workspace.fs.stat(cmakeUri);
+    } catch {
+      return;
+    }
+
+    let cmakeText = Buffer.from(await vscode.workspace.fs.readFile(cmakeUri)).toString('utf-8');
+    const relativePath = vscode.workspace.asRelativePath(testFileUri, false).replace(/\\/g, '/');
+    const safeTargetName = relativePath.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_');
+
+    if (cmakeText.includes(`add_executable(${safeTargetName}`) || cmakeText.includes(`add_test(NAME ${safeTargetName}`)) {
+      return;
+    }
+
+    const snippets: string[] = [];
+    if (!/\benable_testing\s*\(/i.test(cmakeText)) {
+      snippets.push('enable_testing()');
+    }
+
+    if (!/\bfind_package\s*\(\s*GTest\b/i.test(cmakeText)) {
+      snippets.push('find_package(GTest REQUIRED)');
+    }
+
+    if (!/\binclude\s*\(\s*GoogleTest\s*\)/i.test(cmakeText)) {
+      snippets.push('include(GoogleTest)');
+    }
+
+    snippets.push(`add_executable(${safeTargetName} ${relativePath})`);
+    snippets.push(`target_link_libraries(${safeTargetName} PRIVATE GTest::gtest_main)`);
+    snippets.push(`gtest_discover_tests(${safeTargetName})`);
+
+    const block = [
+      '',
+      '# ---- CppUT auto registration ----',
+      ...snippets,
+      '# ---- End CppUT auto registration ----',
+      '',
+    ].join('\n');
+
+    cmakeText += block;
+    await vscode.workspace.fs.writeFile(cmakeUri, Buffer.from(cmakeText, 'utf-8'));
+    vscode.window.showInformationMessage(`已自动更新 CMakeLists.txt 并注册测试目标: ${safeTargetName}`);
   }
 
   private getHtml(): string {
