@@ -304,3 +304,45 @@ python -m python_backend.service generate --file "你的cpp文件路径" --metho
 - 推荐把 `cpput.apiEndpoint` 直接设为 `https://api.deepseek.com`（现在会自动补全路径）。
 - 或显式设为 `https://api.deepseek.com/chat/completions`。
 - 修改配置后请重启 Extension Host（F5 调试场景建议重启整个调试会话）。
+
+
+## 9. “No tests were found!!!” 问题定位与修复
+
+### 9.1 问题现象
+在点击“运行覆盖率流程”后，终端输出类似：
+
+```text
+Test project ...
+No tests were found!!!
+Coverage workflow finished. Check build/coverage.html if generated.
+```
+
+这通常不是覆盖率命令本身报错，而是 `ctest` 没有发现任何已注册测试目标。
+
+### 9.2 根因分析
+在 CMake + CTest 体系下，仅仅存在 `generated_xxx_test.cpp` 文件并不足以让 `ctest` 识别测试。必须满足以下条件：
+
+1. `CMakeLists.txt` 中启用了测试（`enable_testing()`）。
+2. 测试源文件被加入可执行目标（`add_executable(...)`）。
+3. 该目标通过 `add_test(...)` 或 `gtest_discover_tests(...)` 注册到 CTest。
+4. 测试目标正确链接 GoogleTest（例如 `GTest::gtest_main`）。
+
+### 9.3 本次代码修复
+已在插件保存测试文件流程中增加“自动注册 CTest”逻辑：
+
+- 保存生成测试后，插件会检测工作区根目录是否存在 `CMakeLists.txt`。
+- 若存在，则自动追加（按需）以下 CMake 内容：
+  - `enable_testing()`（若缺失）
+  - `find_package(GTest REQUIRED)`（若缺失）
+  - `include(GoogleTest)`（若缺失）
+  - `add_executable(<auto_target> <generated_test.cpp>)`
+  - `target_link_libraries(<auto_target> PRIVATE GTest::gtest_main)`
+  - `gtest_discover_tests(<auto_target>)`
+- 若该测试目标已注册，则不会重复追加。
+
+这样再次点击“运行覆盖率流程”时，`ctest --output-on-failure` 可发现并执行测试，避免 “No tests were found!!!”。
+
+### 9.4 使用建议
+- 先“流式生成测试”并“保存测试文件”，确保触发自动注册。
+- 再点击“运行覆盖率流程”。
+- 如本地未安装 GTest/gcovr，需先安装对应依赖，否则构建或覆盖率报告步骤可能失败。
