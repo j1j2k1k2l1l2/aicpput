@@ -346,3 +346,44 @@ Coverage workflow finished. Check build/coverage.html if generated.
 - 先“流式生成测试”并“保存测试文件”，确保触发自动注册。
 - 再点击“运行覆盖率流程”。
 - 如本地未安装 GTest/gcovr，需先安装对应依赖，否则构建或覆盖率报告步骤可能失败。
+
+---
+
+## 9. 常见问题：保存测试后 CMake 报错（`CMAKE_LINKER-NOTFOUND` / `No cmake_minimum_required`）
+
+你描述的现象本质上是两个问题叠加：
+
+1. **`CMakeLists.txt` 为空或缺少基础声明**  
+   CMake 需要最基本的项目声明（至少 `cmake_minimum_required(...)`），否则会直接报：
+   - `No cmake_minimum_required command is present`
+
+2. **Windows + `clang-cl` 下未找到链接器**  
+   日志里 `ClCompile` 已执行，但 `Link` 阶段出现 `CMAKE_LINKER-NOTFOUND`，说明编译器可用，但链接器（`lld-link` 或 `link.exe`）未被 CMake 正确解析到。
+
+### 已提供的修复
+
+本仓库根目录已补充可直接使用的 `CMakeLists.txt` 模板，包含：
+
+- `cmake_minimum_required(VERSION 3.20)` 与 `project(...)` 基础声明。
+- `enable_testing()`、`find_package(GTest REQUIRED)`、`include(GoogleTest)`。
+- 在 `WIN32 + clang-cl` 场景下，如果 `CMAKE_LINKER` 为空，自动尝试查找 `lld-link`/`link`，避免 `CMAKE_LINKER-NOTFOUND`。
+
+### 你本地工程建议这样做
+
+1. 确保你的工程根目录 `CMakeLists.txt` 至少包含本仓库模板中的基础内容。  
+2. Windows 上优先在 **Developer Command Prompt for VS 2022** 或已经加载 VS 工具链环境的终端里运行 CMake。  
+3. 再执行：
+
+```powershell
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+如果仍失败，请重点检查：
+
+- `where lld-link`
+- `where link`
+- `clang-cl --version`
+
+确认链接器与编译器在同一套工具链环境可见。
