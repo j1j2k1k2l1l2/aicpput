@@ -16,6 +16,31 @@ from .test_generator import TestGeneratorModule
 from .types import GenerationRequest, MethodInfo
 
 
+HEADER_EXTENSIONS = {".h", ".hh", ".hpp", ".hxx"}
+IGNORE_DIRS = {".git", "node_modules", "build", ".vscode", "out", "dist", "__pycache__"}
+
+
+def collect_headers(root: Path) -> list[str]:
+    if not root.exists():
+        return []
+
+    headers: list[str] = []
+
+    def walk(path: Path) -> None:
+        for entry in path.iterdir():
+            if entry.is_dir():
+                if entry.name in IGNORE_DIRS:
+                    continue
+                walk(entry)
+                continue
+            if entry.is_file() and entry.suffix.lower() in HEADER_EXTENSIONS:
+                headers.append(str(entry))
+
+    walk(root)
+    headers.sort()
+    return headers
+
+
 def cmd_index(root: str) -> int:
     parser = CppParserModule()
     result = [entry.to_dict() for entry in parser.index_workspace(root)]
@@ -38,7 +63,8 @@ def cmd_generate(file_path: str, method_names: List[str]) -> int:
         return 1
 
     req = GenerationRequest(filePath=file_path, methods=selected)
-    prompt = generator.build_prompt(req, kg.enrich_prompt_context(selected))
+    workspace_headers = collect_headers(Path(file_path).resolve().parent)
+    prompt = generator.build_prompt(req, kg.enrich_prompt_context(selected), workspace_headers)
 
     session = str(uuid.uuid4())
     memory.clear(session)
