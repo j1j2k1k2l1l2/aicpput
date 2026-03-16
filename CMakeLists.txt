@@ -1,11 +1,16 @@
 cmake_minimum_required(VERSION 3.20)
 project(CppUTGeneratedTests LANGUAGES C CXX)
-
+set(CMAKE_SYSTEM_VERSION 10.0.26100.7705)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+
+# ========== 使用本地 googletest 源码 ==========
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+add_subdirectory(googletest)
+# ===========================================
 
 # On Windows + clang-cl, CMake may fail with CMAKE_LINKER-NOTFOUND
 # if the developer environment is not initialized correctly.
@@ -23,10 +28,14 @@ endif()
 include(CTest)
 enable_testing()
 
-find_package(GTest REQUIRED)
+# find_package(GTest REQUIRED)
 include(GoogleTest)
 
-# CppUT 会在保存测试文件后自动追加如下块：
-# add_executable(<auto_target> <generated_test.cpp>)
-# target_link_libraries(<auto_target> PRIVATE GTest::gtest_main)
-# gtest_discover_tests(<auto_target>)
+# ---- CppUT auto registration ----
+enable_testing()
+# find_package(GTest REQUIRED)
+include(GoogleTest)
+add_executable(generated_a_test_cpp generated_a_test.cpp)
+target_link_libraries(generated_a_test_cpp PRIVATE GTest::gtest_main)
+gtest_discover_tests(generated_a_test_cpp)
+# ---- End CppUT auto registration ----
