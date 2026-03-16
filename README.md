@@ -333,16 +333,25 @@ Coverage workflow finished. Check build/coverage.html if generated.
 - 保存生成测试后，插件会检测工作区根目录是否存在 `CMakeLists.txt`。
 - 若存在，则自动追加（按需）以下 CMake 内容：
   - `enable_testing()`（若缺失）
-  - `find_package(GTest REQUIRED)`（若缺失）
-  - `include(GoogleTest)`（若缺失）
+  - `if(NOT TARGET GTest::gtest_main) find_package(GTest REQUIRED) endif()`（兼容 `add_subdirectory(googletest)` 与系统安装两种方式）
   - `add_executable(<auto_target> <generated_test.cpp>)`
   - `target_link_libraries(<auto_target> PRIVATE GTest::gtest_main)`
-  - `gtest_discover_tests(<auto_target>)`
+  - `add_test(NAME <auto_target> COMMAND $<TARGET_FILE:<auto_target>>)`
 - 若该测试目标已注册，则不会重复追加。
 
-这样再次点击“运行覆盖率流程”时，`ctest --output-on-failure` 可发现并执行测试，避免 “No tests were found!!!”。
+这样再次点击“运行覆盖率流程”时，`ctest --output-on-failure` 至少会发现并执行该测试可执行文件，避免 “No tests were found!!!”。
 
-### 9.4 使用建议
+### 9.4 为什么改成 `add_test(...)`（而不是仅依赖 `gtest_discover_tests`）
+
+在 Windows + Visual Studio 多配置生成器（`--config Debug`）场景里，部分环境会出现 **构建成功但 discover 阶段没有把用例写入 CTest** 的情况，最终表现为 `No tests were found!!!`。
+
+`add_test(NAME ... COMMAND $<TARGET_FILE:...>)` 的优势是：
+
+- 不依赖 discover 的额外步骤；
+- CTest 一定能先看到“这个测试可执行程序”并执行；
+- 即使测试可执行里实际用例失败，也会正常反馈到 CTest，而不是“0 tests”。
+
+### 9.5 使用建议
 - 先“流式生成测试”并“保存测试文件”，确保触发自动注册。
 - 再点击“运行覆盖率流程”。
 - 如本地未安装 GTest/gcovr，需先安装对应依赖，否则构建或覆盖率报告步骤可能失败。
@@ -365,7 +374,8 @@ Coverage workflow finished. Check build/coverage.html if generated.
 本仓库根目录已补充可直接使用的 `CMakeLists.txt` 模板，包含：
 
 - `cmake_minimum_required(VERSION 3.20)` 与 `project(...)` 基础声明。
-- `enable_testing()`、`find_package(GTest REQUIRED)`、`include(GoogleTest)`。
+- `enable_testing()`、`if(NOT TARGET GTest::gtest_main) find_package(GTest REQUIRED) endif()`。
+- `add_executable(...)`、`target_link_libraries(... GTest::gtest_main)`、`add_test(NAME ... COMMAND $<TARGET_FILE:...>)`。
 - 在 `WIN32 + clang-cl` 场景下，如果 `CMAKE_LINKER` 为空，自动尝试查找 `lld-link`/`link`，避免 `CMAKE_LINKER-NOTFOUND`。
 
 ### 你本地工程建议这样做

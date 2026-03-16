@@ -28,14 +28,8 @@ endif()
 include(CTest)
 enable_testing()
 
-# find_package(GTest REQUIRED)
-include(GoogleTest)
-
 # ---- CppUT auto registration ----
-enable_testing()
-# find_package(GTest REQUIRED)
-include(GoogleTest)
 add_executable(generated_a_test_cpp generated_a_test.cpp)
 target_link_libraries(generated_a_test_cpp PRIVATE GTest::gtest_main)
-gtest_discover_tests(generated_a_test_cpp)
+add_test(NAME generated_a_test_cpp COMMAND $<TARGET_FILE:generated_a_test_cpp>)
 # ---- End CppUT auto registration ----

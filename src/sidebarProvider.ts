@@ -129,7 +129,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     const relativePath = vscode.workspace.asRelativePath(testFileUri, false).replace(/\\/g, '/');
     const safeTargetName = relativePath.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_');
 
-    if (cmakeText.includes(`add_executable(${safeTargetName}`) || cmakeText.includes(`add_test(NAME ${safeTargetName}`)) {
+    if (
+      cmakeText.includes(`add_executable(${safeTargetName}`)
+      || cmakeText.includes(`add_test(NAME ${safeTargetName}`)
+      || cmakeText.includes(`gtest_discover_tests(${safeTargetName}`)
+    ) {
       return;
     }
 
@@ -138,17 +142,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
       snippets.push('enable_testing()');
     }
 
-    if (!/\bfind_package\s*\(\s*GTest\b/i.test(cmakeText)) {
-      snippets.push('find_package(GTest REQUIRED)');
-    }
-
-    if (!/\binclude\s*\(\s*GoogleTest\s*\)/i.test(cmakeText)) {
-      snippets.push('include(GoogleTest)');
-    }
+    snippets.push('if(NOT TARGET GTest::gtest_main)');
+    snippets.push('  find_package(GTest REQUIRED)');
+    snippets.push('endif()');
 
     snippets.push(`add_executable(${safeTargetName} ${relativePath})`);
     snippets.push(`target_link_libraries(${safeTargetName} PRIVATE GTest::gtest_main)`);
-    snippets.push(`gtest_discover_tests(${safeTargetName})`);
+    snippets.push(`add_test(NAME ${safeTargetName} COMMAND $<TARGET_FILE:${safeTargetName}>)`);
 
     const block = [
       '',
