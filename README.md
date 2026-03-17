@@ -403,3 +403,44 @@ Coverage workflow finished. Check build/coverage.html if generated.
 - 失败兜底命令也统一为 `ctest -C Debug --output-on-failure`。
 
 这样可同时解决 `--timeout` 参数无效和 `Missing "-C <config>"` 两类错误。
+
+
+## 15. 问题修复记录：Windows 覆盖率流程中 CTest 用例全部 `Timeout`
+
+### 15.1 现象
+
+在 VSCode 左侧“单测运行”按钮中，单个用例（例如 `generated_a_test_cpp`）可以通过；
+但点击“运行覆盖率流程”时会出现：
+
+- `generated_a_test_cpp .............***Timeout 30.01 sec`
+- `generated_b_test_cpp .............***Timeout 30.02 sec`
+
+并且在超时后还会出现一次额外报错：
+
+- `CMake Error: Invalid value used with -C`
+
+### 15.2 根因
+
+该问题是覆盖率脚本命令拼接细节导致的两处问题叠加：
+
+1. **超时阈值过短**：覆盖率流程默认对每个测试进程设置 `--timeout 30`，在 Windows + VS 调试构建下，首次运行或负载较高时容易超过 30 秒，被 CTest 误判为超时。
+2. **PowerShell 字符串未插值**：失败兜底命令写成了单引号字符串
+   `if ($LASTEXITCODE -ne 0) { ctest -C ${config} --output-on-failure }`，
+   PowerShell 不会展开 `${config}`，导致实际传给 `ctest -C` 的值非法，触发 `Invalid value used with -C`。
+
+### 15.3 代码修复
+
+已在 `src/modules/coverageRunner.ts` 中修复：
+
+- 将 `CTEST_TIMEOUT_SECONDS` 从 `30` 提升到 `120`，减少 Windows 场景下误超时；
+- 将兜底命令改成模板字符串，确保 `${config}` 在 TS 侧完成插值后再发送到 PowerShell；
+- 同步修正非 Windows 分支中的 `--timeout`，改为真实数字插值，避免把字面量占位符传给 `ctest`。
+
+### 15.4 修复后覆盖率命令示例（Windows）
+
+```powershell
+ctest -C Debug --output-on-failure --timeout 120
+if ($LASTEXITCODE -ne 0) { ctest -C Debug --output-on-failure }
+```
+
+这可以避免“先超时，再因为 `-C` 参数非法而二次失败”的连锁问题。
