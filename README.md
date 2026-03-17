@@ -374,3 +374,32 @@ Coverage workflow finished. Check build/coverage.html if generated.
 - 先“流式生成测试”并“保存测试文件”，确保触发自动注册。
 - 再点击“运行覆盖率流程”。
 - 如本地未安装 GTest/gcovr，需先安装对应依赖，否则构建或覆盖率报告步骤可能失败。
+
+
+## 14. 问题修复记录：Windows 覆盖率流程提示 `Invalid value used with --timeout`
+
+### 14.1 现象
+
+点击“运行覆盖率流程”后在 PowerShell 出现：
+
+- `CMake Error: Invalid value used with --timeout`
+- 随后的兜底 `ctest --output-on-failure` 继续报：
+  - `Test not available without configuration. (Missing "-C <config>"?)`
+
+### 14.2 根因
+
+这是两个问题叠加导致的：
+
+1. 覆盖率命令里把 `--timeout` 写成了 `${CoverageRunnerModule.CTEST_TIMEOUT_SECONDS}` 这种 **PowerShell 不可识别** 的占位形式，`ctest` 接收到的不是数字，从而报 `Invalid value used with --timeout`。
+2. 第一次 `ctest` 失败后，兜底命令未携带 `-C Debug`，而 Windows 多配置生成器（Visual Studio）下运行测试必须显式指定配置，导致测试显示 `Not Run`。
+
+### 14.3 代码修复
+
+已在 `src/modules/coverageRunner.ts` 中修复 Windows 流程：
+
+- 在 TypeScript 侧先计算 `timeout` 与 `config`，再拼接为最终 PowerShell 命令；
+- 构建命令改为 `cmake --build build --config Debug`；
+- 主测试命令改为 `ctest -C Debug --output-on-failure --timeout 30`；
+- 失败兜底命令也统一为 `ctest -C Debug --output-on-failure`。
+
+这样可同时解决 `--timeout` 参数无效和 `Missing "-C <config>"` 两类错误。
