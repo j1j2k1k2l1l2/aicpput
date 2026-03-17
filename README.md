@@ -306,6 +306,34 @@ python -m python_backend.service generate --file "你的cpp文件路径" --metho
 - 修改配置后请重启 Extension Host（F5 调试场景建议重启整个调试会话）。
 
 
+## 13. 问题修复记录：运行测试卡在 `Start 1: generated_a_test_cpp`
+
+### 13.1 现象
+
+- 终端可完成 CMake 配置和编译，但执行到 `ctest` 时卡在：
+  - `Start 1: generated_a_test_cpp`
+- 输出窗口长时间无后续结果，看起来像“测试流程挂住”。
+
+### 13.2 根因
+
+在覆盖率流程里，插件直接执行 `ctest --output-on-failure`，未设置单测超时。
+如果被测代码或生成测试中出现死循环/阻塞（例如某些边界输入触发非预期路径），CTest 会一直等待该用例退出，导致流程看起来“卡住”。
+
+### 13.3 代码修复
+
+已在 `CoverageRunnerModule` 中为 CTest 增加统一超时参数：
+
+- Windows：`ctest --output-on-failure --timeout 30`
+- Linux/macOS：`ctest --output-on-failure --timeout 30`
+
+这样当某个测试进程超过 30 秒未结束时，CTest 会自动终止并返回失败信息，避免整体流程无限等待。
+
+### 13.4 使用建议
+
+- 若你的项目测试本身较慢，可按需提高该超时值（在 `src/modules/coverageRunner.ts` 的 `CTEST_TIMEOUT_SECONDS` 常量中调整）。
+- 对你给出的 `a(int, int)` 这类加法测试，建议优先避免触发有符号整型溢出的断言（如 `min_int + (-min_int)`），以减少未定义行为带来的不稳定结果。
+
+
 ## 9. “No tests were found!!!” 问题定位与修复
 
 ### 9.1 问题现象
