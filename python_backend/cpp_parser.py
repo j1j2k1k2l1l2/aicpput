@@ -12,6 +12,7 @@ METHOD_REGEX = re.compile(
     r"^\s*(?:template\s*<[^>]+>\s*)?(?:[\w:<>~*&\s]+)\s+([A-Za-z_][\w:]*)\s*\(([^;{}]*)\)\s*(?:const)?\s*(?:noexcept)?\s*(?:\{|$)",
     re.MULTILINE,
 )
+CONTROL_STATEMENT_PREFIXES = ("if(", "else if(", "for(", "while(", "switch(", "catch(")
 
 
 class CppParserModule:
@@ -34,10 +35,16 @@ class CppParserModule:
         methods: List[MethodInfo] = []
         for match in METHOD_REGEX.finditer(text):
             signature = match.group(0).strip()
+            if self._is_control_statement(signature):
+                continue
             name = match.group(1)
             line = text.count("\n", 0, match.start()) + 1
             methods.append(MethodInfo(name=name, signature=signature, filePath=str(file_path), line=line))
         return methods
+
+    def _is_control_statement(self, signature: str) -> bool:
+        normalized = " ".join(signature.split())
+        return normalized.startswith(CONTROL_STATEMENT_PREFIXES)
 
     def _collect_cpp_files(self, root: Path) -> List[Path]:
         if not root.exists():
